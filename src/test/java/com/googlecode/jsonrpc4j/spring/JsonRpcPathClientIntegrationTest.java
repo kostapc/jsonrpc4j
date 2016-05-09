@@ -1,32 +1,39 @@
 package com.googlecode.jsonrpc4j.spring;
 
-import static junit.framework.Assert.assertNotNull;
-import static junit.framework.Assert.assertTrue;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
+
 import org.springframework.aop.support.AopUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
+import com.googlecode.jsonrpc4j.spring.service.Service;
+
 @RunWith(SpringJUnit4ClassRunner.class)
 @ContextConfiguration("classpath:clientApplicationContext.xml")
 public class JsonRpcPathClientIntegrationTest {
 
-  @Autowired
-  private Service service;
+	@Autowired
+	private Service service;
 
-  @Test
-  public void shouldCreateServiceExporter() {
-    assertNotNull(service);
-    assertTrue(AopUtils.isAopProxy(service));
-  }
+	@Test
+	public void shouldCreateServiceExporter() {
+		assertNotNull(service);
+		assertTrue(AopUtils.isAopProxy(service));
+	}
 
-  @Test
-  public void callToObjectMethodsShouldBeHandledLocally() {
-    assertNotNull(service.toString());
-    service.hashCode();
-    assertTrue(service.equals(service));
-  }
+	@Test
+	public void callToObjectMethodsShouldBeHandledLocally() {
+		if (service != null) {
+			assertNotNull(service.toString());
+			// noinspection ResultOfMethodCallIgnored
+			service.hashCode();
+			// noinspection EqualsWithItself
+			assertTrue(service.equals(service));
+		}
+	}
 }
