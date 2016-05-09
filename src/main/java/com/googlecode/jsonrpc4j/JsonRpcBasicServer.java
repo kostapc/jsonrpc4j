@@ -1,23 +1,15 @@
 package com.googlecode.jsonrpc4j;
 
-import static com.googlecode.jsonrpc4j.ErrorResolver.JsonError.ERROR_NOT_HANDLED;
-import static com.googlecode.jsonrpc4j.ReflectionUtil.findCandidateMethods;
-import static com.googlecode.jsonrpc4j.ReflectionUtil.getParameterTypes;
-import static com.googlecode.jsonrpc4j.Util.hasNonNullData;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.googlecode.jsonrpc4j.ErrorResolver.JsonError;
-
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.NullNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.*;
+import com.googlecode.jsonrpc4j.ErrorResolver.JsonError;
+import net.iharder.Base64;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -28,14 +20,12 @@ import java.lang.reflect.*;
 import java.math.BigDecimal;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
-import net.iharder.Base64;
+import static com.googlecode.jsonrpc4j.ErrorResolver.JsonError.ERROR_NOT_HANDLED;
+import static com.googlecode.jsonrpc4j.ReflectionUtil.findCandidateMethods;
+import static com.googlecode.jsonrpc4j.ReflectionUtil.getParameterTypes;
+import static com.googlecode.jsonrpc4j.Util.hasNonNullData;
 
 /**
  * A JSON-RPC request server reads JSON-RPC requests from an input stream and writes responses to an output stream.
@@ -110,7 +100,9 @@ public class JsonRpcBasicServer {
 		this.mapper = mapper;
 		this.handler = handler;
 		this.remoteInterface = remoteInterface;
-		if (handler != null) logger.debug("created server for interface {} with handler {}", remoteInterface, handler.getClass());
+		if (handler != null) {
+            logger.debug("created server for interface {} with handler {}", remoteInterface, handler.getClass());
+        }
 	}
 
 	/**
@@ -428,42 +420,6 @@ public class JsonRpcBasicServer {
 		return m.getGenericReturnType() != null;
 	}
 
-		// convert the parameters
-		Object[] convertedParams;
-        Type[] parameterTypes = m.getGenericParameterTypes();
-        Object result;
-		if(m.getParameterTypes().length == 1 && m.isVarArgs()) {
-        // when move to java 8
-        // if(m.getParameters().length==1 && m.getParameters()[0].isVarArgs()) {
-            convertedParams = new Object[params.size()];
-            ObjectMapper mapper = new ObjectMapper();
-
-            for (int i = 0; i < params.size(); i++) {
-                JsonNode jsonNode = params.get(i);
-                Class type = getJavaTypeForJsonType(jsonNode.getNodeType());
-                Object object = mapper.convertValue(jsonNode, type);
-                LOGGER.log(Level.FINEST,String.format(
-                        "[%s] param: %s -> %s",
-                        m.getName(), i, type.getName()
-                ));
-                convertedParams[i] = object;
-            }
-
-            result = m.invoke(target, new Object[] {convertedParams});
-
-        } else {
-            convertedParams = new Object[params.size()];
-            for (int i = 0; i < parameterTypes.length; i++) {
-                JsonParser paramJsonParser = mapper.treeAsTokens(params.get(i));
-                JavaType paramJavaType = TypeFactory.defaultInstance().constructType(parameterTypes[i]);
-                convertedParams[i] = mapper.readValue(paramJsonParser, paramJavaType);
-            }
-            result = m.invoke(target, convertedParams);
-        }
-
-        return (m.getGenericReturnType()!=null) ? mapper.valueToTree(result) : null;
-	}
-
     private Object[] convertJsonToParameters(Method m, List<JsonNode> params) throws IOException {
         Object[] convertedParams = new Object[params.size()];
         Type[] parameterTypes = m.getGenericParameterTypes();
@@ -554,30 +510,34 @@ public class JsonRpcBasicServer {
 		throw new IllegalArgumentException("Unknown params node type: " + paramsNode.toString());
 	}
 
+    // just to save code
+    @Deprecated
+    private AMethodWithItsArgs findBestMethodByParamsNode_dynamic(Set<Method> methods, JsonNode paramsNode) {
+
         if (paramsNode!=null && !paramsNode.isArray() && !paramsNode.isObject()) {
             throw new IllegalArgumentException("Unknown params node type: "+paramsNode.toString());
         }
 
-		// no parameters
-		if (paramsNode==null || paramsNode.isNull()) {
+        // no parameters
+        if (paramsNode==null || paramsNode.isNull()) {
             return findBestMethodUsingParamIndexes(methods, 0, null);
         }
 
-        MethodAndArgs matchedMethod = null;
+        AMethodWithItsArgs matchedMethod = null;
 
-		// array parameters
-		if (paramsNode.isArray()) {
+        // array parameters
+        if (paramsNode.isArray()) {
             matchedMethod = findBestMethodUsingParamIndexes(methods, paramsNode.size(), ArrayNode.class.cast(paramsNode));
 
-		// named parameters
-		} else if (paramsNode.isObject()) {
-			Set<String> fieldNames = new HashSet<>();
-			Iterator<String> itr=paramsNode.fieldNames();
-			while (itr.hasNext()) {
-				fieldNames.add(itr.next());
-			}
+            // named parameters
+        } else if (paramsNode.isObject()) {
+            Set<String> fieldNames = new HashSet<>();
+            Iterator<String> itr=paramsNode.fieldNames();
+            while (itr.hasNext()) {
+                fieldNames.add(itr.next());
+            }
             matchedMethod = findBestMethodUsingParamNames(methods, fieldNames, ObjectNode.class.cast(paramsNode));
-		}
+        }
 
         // i know, this code is suck...
         if(matchedMethod==null) {
@@ -585,8 +545,7 @@ public class JsonRpcBasicServer {
             for (Method method : methods) {
                 Class[] parameters = method.getParameterTypes();
                 if(parameters.length==1 && method.isVarArgs()) {
-                    matchedMethod = new MethodAndArgs();
-                    matchedMethod.method = method;
+                    matchedMethod = new AMethodWithItsArgs(method);
 
                     if (paramsNode.isArray()) {
                         ArrayNode arrayNode = ArrayNode.class.cast(paramsNode);
@@ -611,7 +570,7 @@ public class JsonRpcBasicServer {
         }
 
         return matchedMethod;
-	}
+    }
 
     private Set<String> collectFieldNames(JsonNode paramsNode) {
         Set<String> fieldNames = new HashSet<>();
